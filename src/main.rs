@@ -1,6 +1,8 @@
-use std::sync::mpsc;
+use std::sync::{mpsc, Mutex};
 use std::thread;
 use std::time::Duration;
+use std::rc::Rc;
+use std::sync::Arc;
 
 fn play1() {
     thread::spawn(|| {
@@ -46,6 +48,12 @@ fn play3() {
     // ensure the spawned thread is finished before leaving the function
     handle.join().unwrap();
 }
+
+/// 
+/// Message passing is a way of handling concurrency
+/// Channels is like single ownership
+/// Once the value is transferred it should not be used anymore
+/// 
 
 fn play4() {
     // Multiple Producers Single Consuner
@@ -150,6 +158,64 @@ fn play7() {
     }
 }
 
+///
+/// Memory sharing is another way of handling concurrency
+/// Here it is more like multiple ownership:
+/// multiple thread can access the same memory location at
+/// the same time
+/// deadlock empire, here we come !
+/// (saw in embedded Rust OS project, even Rust compiler
+/// can't prevent deadlocks to happen)
+/// 
+
+
+fn play8() {
+    let counter = Mutex::new(0);
+
+    thread::scope(|s| {
+        for _ in 0..10 {
+            // thread scope avoid us the hassle of moving the mutex
+            // as the thread lifetime will not exceed the scope
+            // it seems it can borrow the mutex without any issues
+            s.spawn(|| {
+                let mut count = counter.lock().unwrap();
+
+                *count += 1;
+            });
+        }
+    });
+
+    println!("Result: {}", *counter.lock().unwrap());
+}
+
+fn play9() {
+    // without thread scope we have to move the Mutex
+    // but a Rc can't be sent safely between threads
+    // (so no Send trait)
+    // it use due the fact that when changing the reference
+    // count, it does not use thread safe primitives
+    // So we go with Atomic Rc, which has the same API
+    let counter = Arc::new(Mutex::new(0));
+    let mut handles = vec![];
+
+    for _ in 0..10 {
+        let counter = Arc::clone(&counter);
+        let handle = thread::spawn(move || {
+            let mut num = counter.lock().unwrap();
+
+            *num += 1;
+        });
+        handles.push(handle);
+    }
+
+    for handle in handles {
+        handle.join().unwrap();
+    }
+
+    println!("Result: {}", *counter.lock().unwrap());
+}
+
+
 fn main() {
-    play7();
+    play9();
 }
